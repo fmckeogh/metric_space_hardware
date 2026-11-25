@@ -1,0 +1,13 @@
+module Blinky (
+    clk: input  clock,
+    led: output logic<5>,
+) {
+    var counter: logic<24>;
+
+    always_ff {
+        counter += 1;
+    }
+
+    // Drive the 5 LEDs from the upper bits of the 24-bit counter
+    assign led = counter[23:19];
+}
