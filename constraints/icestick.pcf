@@ -1,0 +1,11 @@
+# Lattice iCEstick (iCE40HX1K-TQ144) pin constraints for metric_space_hardware_Blinky
+
+# 12 MHz on-board oscillator
+set_io clk 21
+
+# Red LEDs D1-D4 around the edge, green LED D5 in the centre
+set_io led[0] 99
+set_io led[1] 98
+set_io led[2] 97
+set_io led[3] 96
+set_io led[4] 95
