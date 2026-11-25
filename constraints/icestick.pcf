@@ -1,4 +1,4 @@
-# Lattice iCEstick (iCE40HX1K-TQ144) pin constraints for metric_space_hardware_Blinky
+# Lattice iCEstick (iCE40HX1K-TQ144) pin constraints for metric_space_hardware_Top
 
 # 12 MHz on-board oscillator
 set_io clk 21
@@ -9,3 +9,7 @@ set_io led[1] 98
 set_io led[2] 97
 set_io led[3] 96
 set_io led[4] 95
+
+# UART to the FT2232H's channel B (the iCEstick's second USB serial port)
+set_io rx 9  # FTDI TXD -> FPGA
+set_io tx 8  # FPGA -> FTDI RXD

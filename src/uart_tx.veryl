@@ -1,0 +1,50 @@
+/// UART transmitter, 8N1 (8 data bits, no parity, 1 stop bit), LSB first.
+///
+/// While `o_busy` is low, set `i_valid` high for one cycle with a byte on
+/// `i_data` to send it. `i_valid` is ignored while `o_busy` is high.
+///
+/// There is no reset: iCE40 flip-flops power up at 0, which is the idle state
+/// here.
+module UartTx #(
+    // Clock cycles per bit (clock frequency / baud rate)
+    param CLKS_PER_BIT: u32 = 12,
+) (
+    i_clk  : input  clock   ,
+    i_data : input  logic<8>,
+    i_valid: input  logic   ,
+    o_busy : output logic   ,
+    o_tx   : output logic   ,
+) {
+    // Bits still to send, LSB first: start bit, 8 data bits, stop bit
+    var frame    : logic<10>;
+    // Bits left in the current frame; 0 means idle
+    var bits_left: logic<4>;
+    var clk_cnt  : logic<$clog2(CLKS_PER_BIT)>;
+
+    assign o_busy = bits_left != 0;
+
+    always_ff {
+        if bits_left == 0 {
+            if i_valid {
+                frame     = {1'b1, i_data, 1'b0};
+                bits_left = 10;
+                clk_cnt   = 0;
+            }
+        } else if clk_cnt == CLKS_PER_BIT - 1 {
+            frame     =  {1'b1, frame[9:1]};
+            bits_left -= 1;
+            clk_cnt   =  0;
+        } else {
+            clk_cnt += 1;
+        }
+    }
+
+    // The line idles high
+    always_comb {
+        if bits_left == 0 {
+            o_tx = 1;
+        } else {
+            o_tx = frame[0];
+        }
+    }
+}

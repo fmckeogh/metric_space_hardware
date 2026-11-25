@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -11,17 +15,31 @@
       self,
       nixpkgs,
       flake-utils,
+      rust-overlay,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        };
         inherit (pkgs) lib;
 
-        project = (lib.importTOML ./Veryl.toml).project;
-        top = "${project.name}_Blinky";
+        # Newest nightly (as of the locked rust-overlay) that ships all of these components
+        rust-nightly = pkgs.rust-bin.stable.latest.default.override {
+            extensions = [
+              "rust-src"
+              "rust-analyzer"
+            ];
+          }
+        ;
 
-        # Blinky for a Lattice iCEstick (iCE40HX1K-TQ144, 12 MHz oscillator).
+        project = (lib.importTOML ./Veryl.toml).project;
+        top = "${project.name}_Top";
+
+        # Gateware for a Lattice iCEstick (iCE40HX1K-TQ144, 12 MHz oscillator):
+        # Blinky on the LEDs plus a UART echo (see src/top.veryl).
         # Each stage is its own derivation, so a stage is only rebuilt when its
         # own inputs (sources, flags, tool versions, previous stage) change.
 
@@ -94,10 +112,10 @@
         apps.default = {
           type = "app";
           program = lib.getExe prog-icestick;
-          meta.description = "Flash the Blinky bitstream to an iCEstick";
+          meta.description = "Flash the bitstream to an iCEstick";
         };
 
-        # mkShell (not mkShellNoCC) so Verilator has a C++ toolchain available.
+        # mkShell (not mkShellNoCC) so Verilator and rustc have a C toolchain/linker.
         devShells.default = pkgs.mkShell {
           inputsFrom = [
             blinky-sv
@@ -105,7 +123,10 @@
             blinky-pnr
             blinky-icestick
           ];
-          packages = [ pkgs.verilator ];
+          packages = [
+            pkgs.verilator
+            rust-nightly # rustc, cargo, clippy, rustfmt, rust-src, rust-analyzer
+          ];
         };
       }
     );

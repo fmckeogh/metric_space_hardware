@@ -1,0 +1,56 @@
+/// iCEstick top level: Blinky on the LEDs, plus a UART echo that sends every
+/// byte received on the FTDI serial port (channel B) straight back.
+module Top #(
+    // 12 MHz clock / 1 Mbaud = 12 clock cycles per bit
+    param CLKS_PER_BIT: u32 = 12,
+) (
+    clk: input  clock   ,
+    rx : input  logic   ,
+    tx : output logic   ,
+    led: output logic<5>,
+) {
+    var rx_data     : logic<8>;
+    var rx_valid    : logic   ;
+    var tx_busy     : logic   ;
+    var tx_valid    : logic   ;
+    var pending     : logic   ;
+    var pending_data: logic<8>;
+
+    inst u_blinky: Blinky (
+        clk: clk,
+        led: led,
+    );
+
+    inst u_rx: UartRx #(
+        CLKS_PER_BIT: CLKS_PER_BIT,
+    ) (
+        i_clk  : clk     ,
+        i_rx   : rx      ,
+        o_data : rx_data ,
+        o_valid: rx_valid,
+    );
+
+    // One-byte buffer between receiver and transmitter. The two ends' clocks
+    // differ slightly, so in a continuous stream a byte can arrive a cycle
+    // before the previous echo has finished; hold it here instead of dropping it.
+    always_ff {
+        if rx_valid {
+            pending      = 1;
+            pending_data = rx_data;
+        } else if tx_valid {
+            pending = 0;
+        }
+    }
+
+    assign tx_valid = pending && !tx_busy;
+
+    inst u_tx: UartTx #(
+        CLKS_PER_BIT: CLKS_PER_BIT,
+    ) (
+        i_clk  : clk         ,
+        i_data : pending_data,
+        i_valid: tx_valid    ,
+        o_busy : tx_busy     ,
+        o_tx   : tx          ,
+    );
+}
