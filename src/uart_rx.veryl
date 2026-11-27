@@ -2,14 +2,13 @@
 ///
 /// `o_valid` is high for one cycle when `o_data` holds a newly received byte.
 /// Bytes with a low stop bit (framing errors) are dropped.
-///
-/// There is no reset: iCE40 flip-flops power up at 0, which is the idle state
-/// here. CLKS_PER_BIT must be at least 4.
+/// CLKS_PER_BIT must be at least 4.
 module UartRx #(
     // Clock cycles per bit (clock frequency / baud rate)
     param CLKS_PER_BIT: u32 = 12,
 ) (
     i_clk  : input  clock   ,
+    i_rst  : input  reset   ,
     i_rx   : input  logic   ,
     o_data : output logic<8>,
     o_valid: output logic   ,
@@ -31,61 +30,76 @@ module UartRx #(
     var shift  : logic<8>;
 
     always_ff {
-        rx_meta = i_rx;
-        rx      = rx_meta;
+        if_reset {
+            // The line idles high
+            rx_meta = 1;
+            rx      = 1;
+        } else {
+            rx_meta = i_rx;
+            rx      = rx_meta;
+        }
     }
 
     always_ff {
-        o_valid = 0;
+        if_reset {
+            state   = State::Idle;
+            clk_cnt = 0;
+            bit_idx = 0;
+            shift   = 0;
+            o_data  = 0;
+            o_valid = 0;
+        } else {
+            o_valid = 0;
 
-        case state {
-            // Wait for the falling edge of a start bit
-            State::Idle: {
-                if rx == 0 {
-                    state   = State::Start;
-                    clk_cnt = 0;
-                }
-            }
-            // Check the line is still low halfway through the start bit, to
-            // ignore glitches. From here, every CLKS_PER_BIT cycles lands in
-            // the middle of the next bit.
-            State::Start: {
-                if clk_cnt == CLKS_PER_BIT / 2 - 1 {
-                    clk_cnt = 0;
-                    bit_idx = 0;
+            case state {
+                // Wait for the falling edge of a start bit
+                State::Idle: {
                     if rx == 0 {
-                        state = State::Data;
+                        state   = State::Start;
+                        clk_cnt = 0;
+                    }
+                }
+                // Check the line is still low halfway through the start bit, to
+                // ignore glitches. From here, every CLKS_PER_BIT cycles lands in
+                // the middle of the next bit.
+                State::Start: {
+                    if clk_cnt == CLKS_PER_BIT / 2 - 1 {
+                        clk_cnt = 0;
+                        bit_idx = 0;
+                        if rx == 0 {
+                            state = State::Data;
+                        } else {
+                            state = State::Idle;
+                        }
                     } else {
+                        clk_cnt += 1;
+                    }
+                }
+                // Sample 8 data bits, LSB first
+                State::Data: {
+                    if clk_cnt == CLKS_PER_BIT - 1 {
+                        clk_cnt = 0;
+                        shift   = {rx, shift[7:1]};
+                        if bit_idx == 7 {
+                            state = State::Stop;
+                        } else {
+                            bit_idx += 1;
+                        }
+                    } else {
+                        clk_cnt += 1;
+                    }
+                }
+                // Accept the byte only if the stop bit is high
+                State::Stop: {
+                    if clk_cnt == CLKS_PER_BIT - 1 {
+                        if rx == 1 {
+                            o_data  = shift;
+                            o_valid = 1;
+                        }
                         state = State::Idle;
-                    }
-                } else {
-                    clk_cnt += 1;
-                }
-            }
-            // Sample 8 data bits, LSB first
-            State::Data: {
-                if clk_cnt == CLKS_PER_BIT - 1 {
-                    clk_cnt = 0;
-                    shift   = {rx, shift[7:1]};
-                    if bit_idx == 7 {
-                        state = State::Stop;
                     } else {
-                        bit_idx += 1;
+                        clk_cnt += 1;
                     }
-                } else {
-                    clk_cnt += 1;
-                }
-            }
-            // Accept the byte only if the stop bit is high
-            State::Stop: {
-                if clk_cnt == CLKS_PER_BIT - 1 {
-                    if rx == 1 {
-                        o_data  = shift;
-                        o_valid = 1;
-                    }
-                    state = State::Idle;
-                } else {
-                    clk_cnt += 1;
                 }
             }
         }
